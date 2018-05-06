@@ -7,13 +7,14 @@ Read more about flot charts at the website: http://www.flotcharts.org/
 
 * Drawing rectangles (transparent), vertical and horizontal lines
 * Touch devices support panning and zooming (requires flot.navigate plugin)
+* Touch event "plottap" on single or multi taps on plot
 
-# Features
+# Configuration
 
-The plugin supports these options:
+Extra plugin supports configuration options:
 ``` js 
  extra: {
-    touch: true,            // touch pan and zoom enable (by default)
+    touch: true,            // touch pan, zoom and tap events enable (by default)
 
     color: color,           // default color
     lineWidth: width,       // default line width
@@ -56,6 +57,17 @@ var plot = $.plot(parent, [[]], {
         rectangles: [{ left: (new Date(2013,8,26)).getTime(), right: (new Date(2013,8,27)).getTime() }],
         horizontalLines: [{ location: 120 }],
         verticalLines: [{ location: (new Date(2013,8,25)).getTime() }]
+    },
+    zoom: {
+        interactive: true
+    },
+    pan: {
+        interactive: true
+    }
+})
+plot.bind('plottap', function(event, ntap, ktap, pos) {
+    if (ntap === 1 && ktap === 2) {
+        // single click with two fingers
     }
 })
 ```
