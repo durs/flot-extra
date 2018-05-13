@@ -8,11 +8,19 @@
 
  extra: {
     touch: true,            // touch pan, zoom and tap events enable (by default)
-    color: color,           // default color
-    lineWidth: width,       // default line width
-    lineWidthRect: width,   // default line width for rect
+    color: color,           // default drawing color for lines
+    fillColor: color,       // default filling color for markers
+    lineWidth: 1,           // default line width
+    lineWidthRect: 0,       // default line width for rect
+    lineWidthMarker: 1,     // default line width for markers
     lineJoin: "round",      // default line join style
+    shadowSize: 2,          // default shadow size for markers
+    shadowBlur: 10,         // default shadow blur for lines
     cropByBounds: true,     // crop by plot bounds flag
+    background: true,       // drawing rectangles at background
+    transparent: 1,         // drawing rectangles with alpha channel on value < 1
+    markerRadius: 3,        // default marker radius
+    markerSymbol: 'circle', // default marker symbol
 
     // array of rectangles, all parameters are optional
     rectangles: [{
@@ -29,23 +37,38 @@
     verticalLines: [{
         location: 55,
         color: color,
-        lineWidth: width
+        lineWidth: width,
+        shadowBlur: 10
     }],
 
      // array of horizontal lines
     horizontalLines: [{
         location: 100,
         color: color,
-        lineWidth: width
+        lineWidth: width,
+        shadowSize: 2
+    }]
+
+    // array of markers
+    markers: [{
+        x: 10,
+        y: 10,
+        symbol: function or reserved: 'circle', 'square', 'diamond', 'cross', 'triangle', 'triangle_down'
+        radius: 3, 
+        color: color,
+        fillColor: color,
+        lineWidth: width,
+        shadowSize: 2
     }]
  }
 
  Example usage:
     var plot = $.plot(parent, [[]], {
         extra:{
-            rectangles: [{left:(new Date(2013,8,26)).getTime(), right:(new Date(2013,8,27)).getTime()}],
-            horizontalLines: [{location: 120}],
-            verticalLines: [{location: (new Date(2013,8,25)).getTime()}]
+            rectangles: [{ left: (new Date(2013,8,26)).getTime(), right: (new Date(2013,8,27)).getTime() }],
+            horizontalLines: [{ location: 120 }],
+            verticalLines: [{ location: (new Date(2013,8,25)).getTime() }]
+            markers: [{ x: (new Date(2018,5,1)).getTime(), y: 100, radius: 5, symbol: 'triangle', color: '#ff0000', fillColor: '#800000' }]
         }
         zoom: {
             interactive: true
@@ -66,92 +89,263 @@
     var tap_tmout_touch = 300;
     var tap_tmout_untouch = 300;
 
+    var symbols = {
+        circle: function (ctx, x, y, radius, shadow) {
+            ctx.arc(x, y, radius, 0, shadow ? Math.PI : Math.PI * 2, false);
+        },
+        square: function (ctx, x, y, radius, shadow) {
+            var size = radius * Math.sqrt(Math.PI) / 2;
+            ctx.rect(x - size, y - size, size + size, size + size);
+        },
+        diamond: function (ctx, x, y, radius, shadow) {
+            var size = radius * Math.sqrt(Math.PI / 2);
+            ctx.moveTo(x - size, y);
+            ctx.lineTo(x, y - size);
+            ctx.lineTo(x + size, y);
+            ctx.lineTo(x, y + size);
+            ctx.lineTo(x - size, y);
+        },
+        cross: function (ctx, x, y, radius, shadow) {
+            var size = radius * Math.sqrt(Math.PI) / 2;
+            ctx.moveTo(x - size, y - size);
+            ctx.lineTo(x + size, y + size);
+            ctx.moveTo(x - size, y + size);
+            ctx.lineTo(x + size, y - size);
+        },
+        triangle: function (ctx, x, y, radius, shadow) {
+            var size = radius * Math.sqrt(2 * Math.PI / Math.sin(Math.PI / 3));
+            var height = size * Math.sin(Math.PI / 3);
+            ctx.moveTo(x - size/2, y + height/2);
+            ctx.lineTo(x + size/2, y + height/2);
+            if (!shadow) {
+                ctx.lineTo(x, y - height/2);
+                ctx.lineTo(x - size/2, y + height/2);
+            }
+        },
+        triangle_down: function(ctx, x, y, radius, shadow) {
+            var size = radius * Math.sqrt(2 * Math.PI / Math.sin(Math.PI / 3));
+            var height = size * Math.sin(Math.PI / 3);
+            ctx.moveTo(x - size/2, y - height/2);
+            ctx.lineTo(x + size/2, y - height/2);
+            if (!shadow) {
+                ctx.lineTo(x, y + height/2);
+                ctx.lineTo(x - size/2, y - height/2);
+            }
+        }
+    }
+
     function init(plot) {
 
-        // draw extra elements
-        function draw(plot, ctx) {
-            var opt = plot.getOptions();
-            var extra = opt.extra || {};
-            if (!extra.rectangles && !extra.verticalLines && !extra.horizontalLines) return;
-
-            var width = plot.width();
-            var height = plot.height();
-            var plotOffset = plot.getPlotOffset();
-            ctx.save();
-            ctx.translate(plotOffset.left, plotOffset.top);
-
-            // draw rectangles
-            if (extra.rectangles)
-            $.each(extra.rectangles, function(key,rect){
+        // draw extra rectangles
+        function draw_rectangles(plot, ctx, extra, background) {
+            var rectangles = extra.rectangles;
+            if (!rectangles) return;            
+            var width = plot.width(), height = plot.height();
+            var rect, p1, p2, x, y, w, h, lineWidth, color;
+            for (var i = 0, cnt = rectangles.length; i < cnt; i++) {
+                rect = rectangles[i];
                 if (Array.isArray(rect)) {
                     if (rect.length < 4) rect = { left: rect[0], right: rect[1], color: rect[2] }
                     else rect = { left: rect[0], top: rect[1], right: rect[2], bottom: rect[3], color: rect[4] }
                 }
 
                 // prepare coordinates
-                var p1 = plot.p2c({ x: rect.left, y: rect.top });
-                var p2 = plot.p2c({ x: rect.right, y: rect.bottom });
-                if (typeof(p1.left) == 'undefined') p1.left = 0;
-                if (typeof(p2.left) == 'undefined') p2.left = width;
-                if (typeof(p1.top) == 'undefined') p1.top = 0;
-                if (typeof(p2.top) == 'undefined') p2.top = height;
-                var x = Math.min(p1.left, p2.left),
-                    y = Math.min(p1.top, p2.top),
-                    w = Math.abs(p2.left - p1.left),
-                    h = Math.abs(p2.top - p1.top);
+                p1 = plot.p2c({ x: rect.left, y: rect.top });
+                p2 = plot.p2c({ x: rect.right, y: rect.bottom });
+                if (typeof(p1.left) === 'undefined') p1.left = 0;
+                if (typeof(p2.left) === 'undefined') p2.left = width;
+                if (typeof(p1.top) === 'undefined') p1.top = 0;
+                if (typeof(p2.top) === 'undefined') p2.top = height;
+                x = Math.min(p1.left, p2.left);
+                y = Math.min(p1.top, p2.top);
+                w = Math.abs(p2.left - p1.left);
+                h = Math.abs(p2.top - p1.top);
 
                 // crop by plot bounds
-                if (extra.cropByBounds){
-                    if (x+w<=0 || x>=width) w=0;
+                if (extra.cropByBounds) {
+                    if (x + w <= 0 || x >= width) w = 0;
                     else {
-                        if (x<0){ w+=x; x=0; }
-                        if (x+w>width) w=width-x;
+                        if (x < 0) { w += x; x = 0; }
+                        if (x + w > width) w = width - x;
                     }
-                    if (y+h<=0 || y>=height) h=0;
+                    if (y + h <= 0 || y >= height) h = 0;
                     else {
-                        if (y<0){ h+=y; y=0; }
-                        if (y+h>height) h=height-y;
+                        if (y < 0) { h += y; y = 0; }
+                        if (y + h > height) h = height - y;
                     }
                 }
 
                 // draw rect
-                if (w>0 || h>0){
-                    var lnw = rect.lineWidth || extra.lineWidthRect;
-                    var c = $.color.parse(rect.color || extra.color);
-                    ctx.fillStyle = c.scale('a', 0.4).toString();
+                if (w > 0 || h > 0) {
+                    lineWidth = rect.lineWidth || extra.lineWidthRect;
+                    color = rect.color || extra.color;
+                    if (extra.transparent < 1) {
+                        color = $.color.parse(color).scale('a', extra.transparent).toString();
+                    }
+                    ctx.fillStyle = color;
                     ctx.fillRect(x, y, w, h);
-                    if (lnw > 0) {
-                        ctx.lineWidth = lnw;
+                    if (lineWidth > 0) {
+                        color = rect.color || extra.color;
+                        if (extra.transparent < 0.9) {
+                            color = $.color.parse(color).scale('a', extra.transparent + 0.1).toString();
+                        }
+                        ctx.lineWidth = lineWidth;
                         ctx.lineJoin = rect.lineJoin || extra.lineJoin;
-                        ctx.strokeStyle = c.scale('a', 0.8).toString();
+                        ctx.strokeStyle = color;
                         ctx.strokeRect(x, y, w, h);
                     }
                 }
-            });
+            }        
+        }
 
-            // yep, you guessed it, this function draws a line.
-            var drawLine = function(x1, y1, x2, y2, color, lineWidth){
+        // draw extra vertical or horizontal lines
+        function draw_lines(plot, ctx, extra, vertical, shadow) {
+            var lines = vertical ? extra.verticalLines : extra.horizontalLines; 
+            if (!lines) return;
+            var axis = plot.getAxes()[vertical ? 'xaxis' : 'yaxis'];
+            var len = vertical ? plot.height() : plot.width();
+            var line, v, shadowSize;
+            for (var i = 0, cnt = lines.length; i < cnt; i++) {
+                line = lines[i];
+                v = line.location;
+                if (!(v >= axis.min && v <= axis.max)) continue;
+                v = axis.p2c(v);
+
+                if (shadow) {
+                    shadowSize = line.shadowSize || extra.shadowSize;
+                    if (!shadowSize) continue;
+                    ctx.lineWidth = shadowSize;                    
+                    ctx.strokeStyle = shadow < 2 ? 'rgba(0,0,0,0.1)' : 'rgba(0,0,0,0.2)';
+                    v += shadow < 2 ? (shadowSize + shadowSize / 2) : (shadowSize / 2);
+                }
+                else {
+                    ctx.strokeStyle = line.color || extra.color;
+                    ctx.lineWidth = line.lineWidth || extra.lineWidth;                        
+                    ctx.shadowBlur = line.shadowBlur || extra.shadowBlur;
+                    ctx.shadowColor = line.shadowColor || extra.shadowColor;
+                }
+                
                 ctx.beginPath();
-                ctx.strokeStyle = color || extra.color;
-                ctx.lineWidth = lineWidth || extra.lineWidth;
-                ctx.moveTo(x1, y1);
-                ctx.lineTo(x2, y2);
+                if (vertical) {
+                    ctx.moveTo(v, 0);
+                    ctx.lineTo(v, len);    
+                }
+                else {
+                    ctx.moveTo(0, v);
+                    ctx.lineTo(len, v);                        
+                }
                 ctx.stroke();
-            };
+            }
+        }
 
-            // draw extra vertical lines as desired:
-            if (extra.verticalLines)
-            $.each(extra.verticalLines, function(key,line){
-                var p = plot.p2c({ x: line.location, y: 0 });
-                drawLine(p.left, 0, p.left, height, line.color, line.lineWidth);
-            });
+        // draw extra markers
+        function draw_markers(plot, ctx, extra, shadow) {
+            var markers = extra.markers;
+            if (!markers) return;
+            var axes = plot.getAxes(), axisx = axes.xaxis, axisy = axes.yaxis;
+            var marker, x, y, symbol, radius, text, textAlign, textBaseline;
+            var strokeStyle, lineWidth, shadowSize, offset = 0;
+            for (var i = 0, cnt = markers.length; i < cnt; i++) {
+                marker = markers[i];
+                if (!(marker.x >= axisx.min && marker.x <= axisx.max && marker.y >= axisy.min && marker.y <= axisy.max)) continue;
+                x = axisx.p2c(marker.x);
+                y = axisy.p2c(marker.y);
 
-            // draw extra horizontal lines as desired:
-            if (extra.horizontalLines)
-            $.each(extra.horizontalLines, function(key,line){
-                var p = plot.p2c({ x: 0, y: line.location });
-                drawLine(0, p.top, width, p.top, line.color, line.lineWidth);
-            });
+                // prepare symbol
+                symbol = marker.symbol || extra.markerSymbol;
+                if (typeof(symbol) !== 'function') symbol = symbols[symbol];
+                if (symbol) {
+                    radius = marker.radius || extra.markerRadius;
+                    lineWidth = marker.lineWidth || extra.lineWidthMarker;
+                    shadowSize = marker.shadowSize || extra.shadowSize;
+                    if (!shadow) strokeStyle = marker.color || extra.color;
+                    else if (!shadowSize) symbol = undefined;
+                    else if (shadow < 2) {
+                        offset = shadowSize + shadowSize / 2;
+                        strokeStyle = 'rgba(0,0,0,0.1)';
+                    }
+                    else {
+                        offset = shadowSize / 2;
+                        strokeStyle = 'rgba(0,0,0,0.2)';
+                    }
+                }
+
+                // draw symbol
+                if (symbol) {
+                    ctx.beginPath();
+                    ctx.shadowBlur = 0;
+                    ctx.lineWidth = shadow ? shadowSize : lineWidth;
+                    ctx.lineJoin = marker.lineJoin || extra.lineJoin;
+                    ctx.strokeStyle = strokeStyle;
+                    symbol(ctx, x, y + offset, radius, shadow);
+                    ctx.closePath();
+                    if (!shadow) {
+                        ctx.fillStyle = marker.fillColor || extra.fillColor;
+                        ctx.fill();                    
+                    }
+                    ctx.stroke();
+                }
+
+                // draw text
+                if (shadow) continue;
+                text = marker.text;
+                if (typeof(text) === 'function') text = text.call(marker, plot);
+                if (text) {
+                    textAlign = marker.textAlign || extra.textAlign;
+                    textBaseline = marker.textBaseline || extra.textBaseline;
+                    if (symbol) {                        
+                        if (textBaseline === 'bottom') y -= radius;
+                        else if (textBaseline === 'top') y += radius;
+                        if (textAlign === 'left') x += radius;
+                        else if (textAlign === 'right') x -= radius;
+                    }
+                    ctx.textAlign = textAlign;
+                    ctx.textBaseline = textBaseline;
+                    ctx.fillStyle = marker.textColor || extra.textColor;
+                    ctx.shadowColor = marker.shadowColor || extra.shadowColorText;
+                    ctx.shadowBlur = marker.shadowBlur || extra.shadowBlurText;
+                    ctx.font = marker.font || extra.textFont;
+                    ctx.fillText(text.toString(), x, y);
+                }
+            }
+        }
+
+        // draw background elements
+        function draw_background(plot, ctx) {
+            var opt = plot.getOptions();
+            var extra = opt.extra || {};
+            if (!extra.background) return;
+            var plotOffset = plot.getPlotOffset();
+            ctx.save();
+            ctx.translate(plotOffset.left, plotOffset.top);            
+            draw_rectangles(plot, ctx, extra, true);
+            ctx.restore();
+        }
+
+        // draw foreground elements
+        function draw(plot, ctx) {
+            var opt = plot.getOptions();
+            var extra = opt.extra || {};
+            if (!extra.rectangles && !extra.verticalLines && !extra.horizontalLines && !extra.markers) return;
+            var plotOffset = plot.getPlotOffset();            
+            ctx.save();
+            ctx.translate(plotOffset.left, plotOffset.top);
+
+            // draw rectangles foreground
+            if (!extra.background) {
+                draw_rectangles(plot, ctx, extra, false);
+            }
+
+            // draw extra vertical and horizontal lines
+            draw_lines(plot, ctx, extra, true, 0);
+            draw_lines(plot, ctx, extra, false, 0);
+
+            // draw extra markers
+            if (extra.markers) {
+                draw_markers(plot, ctx, extra, 1);
+                draw_markers(plot, ctx, extra, 2);
+                draw_markers(plot, ctx, extra, 0);
+            }
 
             ctx.restore();
         }
@@ -289,6 +483,7 @@
         }
 
         // init hooks
+        plot.hooks.drawBackground.push(draw_background);
         plot.hooks.drawOverlay.push(draw);
         plot.hooks.bindEvents.push(function(plot, eventHolder) {
             var opt = plot.getOptions();
@@ -312,21 +507,37 @@
 
     $.plot.plugins.push({
         name: 'extra',
-        version: '2.2',
+        version: '2.3',
         init: init,
         options: {
             extra: {
                 touch: true,
-                color: "#666",
-                lineJoin: "round",
+                color: '#666',
+                fillColor: '#fff',
+                lineJoin: 'round',
                 lineWidth: 1,
-                lineWidthRect: 0,
+                lineWidthRect: 1,
+                lineWidthMarker: 1,
+                markerRadius: 3,
+                markerSymbol: symbols.circle,
+                shadowSize: 2,
+                shadowBlur: 10,
+                shadowBlurText: 3,
+                shadowColor: '#000',
+                shadowColorText: '#666',
+                textAlign: 'left',
+                textBaseline: 'bottom',
+                textColor: '#444',
+                textFont: '14px arial',
                 cropByBounds: true,
+                background: true,
+                transparent: 1,
                 rectangles: null,
                 verticalLines: null,
-                horizontalLines: null
+                horizontalLines: null,
+                markers: null
             }
         }
-    });
+    })
 
 })(jQuery);

@@ -15,13 +15,27 @@ Extra plugin supports configuration options:
 ``` js 
  extra: {
     touch: true,            // touch pan, zoom and tap events enable (by default)
-
-    color: color,           // default color
-    lineWidth: width,       // default line width
-    lineWidthRect: width,   // default line width for rect
+    color: color,           // default drawing color for lines
+    fillColor: color,       // default filling color for markers
+    lineWidth: 1,           // default line width
+    lineWidthRect: 0,       // default line width for rect
+    lineWidthMarker: 1,     // default line width for markers
     lineJoin: "round",      // default line join style
     cropByBounds: true,     // crop by plot bounds flag
-
+    background: true,       // drawing rectangles at background
+    transparent: 1,         // drawing rectangles with alpha channel on value < 1
+    markerRadius: 3,        // default marker radius
+    markerSymbol: 'circle', // default marker symbol
+    shadowSize: 2,          // default shadow size for markers
+    shadowBlur: 10,         // default shadow blur for lines
+    shadowBlurText: 3,		// default shadow blur for text
+    shadowColor: '#000',
+    shadowColorText: '#666',
+    textAlign: 'left',
+    textBaseline: 'bottom',
+    textColor: '#444',
+    textFont: '14px arial',
+	
     // array of rectangles, all parameters are optional
     rectangles: [{
         left: left,
@@ -46,6 +60,19 @@ Extra plugin supports configuration options:
         color: color,
         lineWidth: width
     }]
+	
+    // array of markers
+    markers: [{
+        x: 10,
+        y: 10,
+        symbol: function or reserved: 'circle', 'square', 'diamond', 'cross', 'triangle', 'triangle_down'
+        radius: 3, 
+        color: color,
+        fillColor: color,
+        lineWidth: width,
+        shadowSize: 2,
+		text: 'string'
+    }]	
  }
 ```
 
@@ -57,6 +84,7 @@ var plot = $.plot(parent, [[]], {
         rectangles: [{ left: (new Date(2013,8,26)).getTime(), right: (new Date(2013,8,27)).getTime() }],
         horizontalLines: [{ location: 120 }],
         verticalLines: [{ location: (new Date(2013,8,25)).getTime() }]
+        markers: [{ x: (new Date(2018,5,1)).getTime(), y: 100, radius: 5, symbol: 'triangle', color: '#ff0000', fillColor: '#800000', text: 'marker' }]
     },
     zoom: {
         interactive: true
