@@ -14,13 +14,20 @@
     lineWidthRect: 0,       // default line width for rect
     lineWidthMarker: 1,     // default line width for markers
     lineJoin: "round",      // default line join style
-    shadowSize: 2,          // default shadow size for markers
-    shadowBlur: 10,         // default shadow blur for lines
     cropByBounds: true,     // crop by plot bounds flag
     background: true,       // drawing rectangles at background
     transparent: 1,         // drawing rectangles with alpha channel on value < 1
     markerRadius: 3,        // default marker radius
     markerSymbol: 'circle', // default marker symbol
+    shadowSize: 2,          // default shadow size for markers
+    shadowBlur: 10,         // default shadow blur for lines
+    shadowBlurText: 3,      // default shadow blur for text
+    shadowColor: '#000',
+    shadowColorText: '#666',
+    textAlign: 'left',
+    textBaseline: 'bottom',
+    textColor: '#444',
+    textFont: '14px arial',
 
     // array of rectangles, all parameters are optional
     rectangles: [{
@@ -58,7 +65,8 @@
         color: color,
         fillColor: color,
         lineWidth: width,
-        shadowSize: 2
+        shadowSize: 2,
+        text: 'string'
     }]
  }
 
@@ -350,6 +358,78 @@
             ctx.restore();
         }
 
+        // extended version zoom from navigate plugin
+        plot.zoom2 = function (args) {
+            if (!args) args = {};
+            var c = args.center,
+                amountx = args.amountx, amounty = args.amounty,
+                w = plot.width(), h = plot.height();
+
+            if (!amountx && !amounty) amountx = amounty = args.amount || plot.getOptions().zoom.amount;
+            if (!c) c = { left: w / 2, top: h / 2 };
+                
+            var xf = c.left / w,
+                yf = c.top / h,
+                minmax = {};
+            
+            if (amountx) minmax.x = {
+                min: c.left - xf * w / amountx,
+                max: c.left + (1 - xf) * w / amountx
+            }
+            if (amounty) minmax.y = {
+                min: c.top - yf * h / amounty,
+                max: c.top + (1 - yf) * h / amounty
+            }
+
+            $.each(plot.getAxes(), function(_, axis) {
+                var axis_minmax = minmax[axis.direction];
+                if (!axis_minmax) return;
+
+                var opts = axis.options,
+                    min = axis_minmax.min,
+                    max = axis_minmax.max,
+                    zr = opts.zoomRange,
+                    pr = opts.panRange;
+
+                if (zr === false) // no zooming on this axis
+                    return;
+                    
+                min = axis.c2p(min);
+                max = axis.c2p(max);
+                if (min > max) {
+                    // make sure min < max
+                    var tmp = min;
+                    min = max;
+                    max = tmp;
+                }
+
+                //Check that we are in panRange
+                if (pr) {
+                    if (pr[0] != null && min < pr[0]) {
+                        min = pr[0];
+                    }
+                    if (pr[1] != null && max > pr[1]) {
+                        max = pr[1];
+                    }
+                }
+
+                var range = max - min;
+                if (zr &&
+                    ((zr[0] != null && range < zr[0] && amount >1) ||
+                     (zr[1] != null && range > zr[1] && amount <1)))
+                    return;
+            
+                opts.min = min;
+                opts.max = max;
+            });
+            
+            plot.setupGrid();
+            plot.draw();
+
+            if (!args.preventEvent)
+                plot.getPlaceholder().trigger('plotzoom', [ plot, args ]);
+        }
+
         // process touch events
         var touch = {};
         function touch_clear() {
@@ -373,12 +453,16 @@
         function touch_zoom(touches, tmout) {
             var ofs = plot.offset();
             var p = { left: (touches[0].pageX + touches[1].pageX) / 2 - ofs.left, top: (touches[0].pageY + touches[1].pageY) / 2 - ofs.top }
-            var d = Math.sqrt(Math.pow(touches[1].pageX - touches[0].pageX, 2) + Math.pow(touches[1].pageY - touches[0].pageY, 2));
-            if (touch.d && !touch.t) touch.t = setTimeout(function () {
-                touch.t = undefined;
-                if (d > 0 && touch.d > 0) plot.zoom({ amount: d/touch.d, center: p });
+            var d = [ Math.abs(touches[1].pageX - touches[0].pageX), Math.abs(touches[1].pageY - touches[0].pageY) ];
+            if (touch.d && !touch.t) touch.t = setTimeout(function() {
+                plot.zoom2({
+                    center: p,
+                    amountx: (p.left + d[0] - touch.d[0]) / p.left,
+                    amounty: (p.top + d[1] - touch.d[1]) / p.top
+                })
                 touch.d = d;
-            }, tmout) 
+                touch.t = undefined;
+            }, tmout)
         }
         function touch_tap(ntap, ktap, tap) {
             var ofs = plot.offset();
@@ -387,6 +471,7 @@
         }
         function touch_start(evt) {
             evt.preventDefault();
+            evt.stopPropagation();
             var opt = plot.getOptions();
             var pan = opt.pan || {};
             var zoom = opt.zoom || {};
@@ -402,7 +487,7 @@
 
             // prepare zoom
             if (zoom.interactive && touches.length >= 2) {
-                touch.d = Math.sqrt(Math.pow(touches[1].pageX - touches[0].pageX, 2) + Math.pow(touches[1].pageY - touches[0].pageY, 2));
+                touch.d = [ Math.abs(touches[1].pageX - touches[0].pageX), Math.abs(touches[1].pageY - touches[0].pageY) ];
             }
 
             // prepare tap
@@ -448,8 +533,10 @@
             evt.preventDefault();
             var touches = evt.originalEvent.touches;
 
-            // clear pan and zoom
-            //touchclear();
+            // update pan
+            if (touch.p && touches.length >= 1) {
+                touch.p = { left: touches[0].pageX, top: touches[0].pageY }
+            }
 
             // set pan timeout actions
             if (touch.t) touch.n = pan_count_motion; 
@@ -531,7 +618,7 @@
                 textFont: '14px arial',
                 cropByBounds: true,
                 background: true,
-                transparent: 1,
+                transparent: 0.5,
                 rectangles: null,
                 verticalLines: null,
                 horizontalLines: null,
