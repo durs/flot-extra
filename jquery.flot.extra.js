@@ -455,10 +455,11 @@
             var p = { left: (touches[0].pageX + touches[1].pageX) / 2 - ofs.left, top: (touches[0].pageY + touches[1].pageY) / 2 - ofs.top }
             var d = [ Math.abs(touches[1].pageX - touches[0].pageX), Math.abs(touches[1].pageY - touches[0].pageY) ];
             if (touch.d && !touch.t) touch.t = setTimeout(function() {
+                var k = 2;
                 plot.zoom2({
                     center: p,
-                    amountx: (p.left + d[0] - touch.d[0]) / p.left,
-                    amounty: (p.top + d[1] - touch.d[1]) / p.top
+                    amountx: (p.left + k*(d[0] - touch.d[0])) / p.left,
+                    amounty: (p.top + k*(d[1] - touch.d[1])) / p.top
                 })
                 touch.d = d;
                 touch.t = undefined;
